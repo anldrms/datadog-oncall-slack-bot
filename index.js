@@ -27,7 +27,7 @@ const slackClient = new WebClient(config.slack.token);
  */
 async function getOnCallInfo() {
   try {
-    const url = `https://api.${config.datadog.site}/api/v2/oncalls`;
+    const url = `https://api.${config.datadog.site}/api/v2/on-call/oncalls`;
 
     const response = await axios.get(url, {
       headers: {
@@ -49,10 +49,7 @@ async function getOnCallInfo() {
  */
 async function getScheduleOnCall(scheduleId) {
   try {
-    const now = new Date();
-    const until = new Date(now.getTime() + 24 * 60 * 60 * 1000); // Next 24 hours
-
-    const url = `https://api.${config.datadog.site}/api/v2/oncalls`;
+    const url = `https://api.${config.datadog.site}/api/v2/on-call/schedules/${scheduleId}/on-call`;
 
     const response = await axios.get(url, {
       headers: {
@@ -61,18 +58,9 @@ async function getScheduleOnCall(scheduleId) {
         'Content-Type': 'application/json'
       },
       params: {
-        from: now.toISOString(),
-        to: until.toISOString()
+        include: 'user'
       }
     });
-
-    // Filter by schedule ID if provided
-    if (scheduleId) {
-      const filtered = response.data.data?.filter(oncall =>
-        oncall.attributes?.schedule?.id === scheduleId
-      );
-      return { ...response.data, data: filtered };
-    }
 
     return response.data;
   } catch (error) {
@@ -84,8 +72,8 @@ async function getScheduleOnCall(scheduleId) {
 /**
  * Format on-call information for Slack message
  */
-function formatOnCallMessage(onCallData) {
-  if (!onCallData || !onCallData.data || onCallData.data.length === 0) {
+function formatOnCallMessage(onCallData, scheduleName = null) {
+  if (!onCallData || !onCallData.data) {
     return {
       text: '🚨 On-Call Status',
       blocks: [
@@ -112,7 +100,7 @@ function formatOnCallMessage(onCallData) {
       type: 'header',
       text: {
         type: 'plain_text',
-        text: '🚨 Today\'s On-Call Engineers'
+        text: '🚨 On-Call Engineer'
       }
     },
     {
@@ -120,41 +108,43 @@ function formatOnCallMessage(onCallData) {
     }
   ];
 
-  onCallData.data.forEach((oncall, index) => {
-    const schedule = oncall.attributes?.schedule;
-    const user = oncall.attributes?.user;
-    const start = oncall.attributes?.start ? new Date(oncall.attributes.start) : null;
-    const end = oncall.attributes?.end ? new Date(oncall.attributes.end) : null;
+  const oncallData = onCallData.data;
+  const attributes = oncallData.attributes || {};
 
-    const scheduleName = schedule?.name || 'Unknown Schedule';
-    const userName = user?.name || user?.email || 'Unknown User';
-    const userEmail = user?.email || '';
+  // Find user from included resources
+  let user = null;
+  if (onCallData.included && onCallData.included.length > 0) {
+    user = onCallData.included.find(item => item.type === 'users');
+  }
 
-    let timeRange = '';
-    if (start && end) {
-      timeRange = `\n⏰ *Shift:* ${start.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      })} - ${end.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      })}`;
-    }
+  const start = attributes.start ? new Date(attributes.start) : null;
+  const end = attributes.end ? new Date(attributes.end) : null;
 
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*📋 ${scheduleName}*\n👤 *Engineer:* ${userName}${userEmail ? ` (${userEmail})` : ''}${timeRange}`
-      }
-    });
+  const userName = user?.attributes?.name || user?.attributes?.email || 'Unknown User';
+  const userEmail = user?.attributes?.email || '';
 
-    if (index < onCallData.data.length - 1) {
-      blocks.push({ type: 'divider' });
+  let timeRange = '';
+  if (start && end) {
+    timeRange = `\n⏰ *Shift:* ${start.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Toronto'
+    })} - ${end.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'America/Toronto'
+    })} EST`;
+  }
+
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `*📋 ${scheduleName || 'Schedule'}*\n👤 *Engineer:* ${userName}${userEmail ? ` (${userEmail})` : ''}${timeRange}`
     }
   });
 
@@ -163,13 +153,13 @@ function formatOnCallMessage(onCallData) {
     elements: [
       {
         type: 'mrkdwn',
-        text: `_Updated: ${new Date().toLocaleString('en-US')}_`
+        text: `_Updated: ${new Date().toLocaleString('en-US', { timeZone: 'America/Toronto' })} EST_`
       }
     ]
   });
 
   return {
-    text: '🚨 Today\'s On-Call Engineers',
+    text: '🚨 On-Call Engineer',
     blocks: blocks
   };
 }
@@ -181,12 +171,25 @@ async function postOnCallToSlack(scheduleId = null) {
   try {
     console.log('Fetching on-call information from Datadog...');
 
+    // Get schedule details first to get the name
+    let scheduleName = null;
+    if (scheduleId) {
+      const scheduleUrl = `https://api.${config.datadog.site}/api/v2/on-call/schedules/${scheduleId}`;
+      const scheduleResponse = await axios.get(scheduleUrl, {
+        headers: {
+          'DD-API-KEY': config.datadog.apiKey,
+          'DD-APPLICATION-KEY': config.datadog.appKey
+        }
+      });
+      scheduleName = scheduleResponse.data.data.attributes.name;
+    }
+
     const onCallData = scheduleId
       ? await getScheduleOnCall(scheduleId)
       : await getOnCallInfo();
 
     console.log('Formatting message...');
-    const message = formatOnCallMessage(onCallData);
+    const message = formatOnCallMessage(onCallData, scheduleName);
 
     console.log(`Posting to Slack channel: ${config.slack.channelId}`);
     const result = await slackClient.chat.postMessage({
