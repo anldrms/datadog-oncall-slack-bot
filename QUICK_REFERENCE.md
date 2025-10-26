@@ -1,22 +1,22 @@
 # Carlton One On-Call Bot - Quick Reference
 
-## 🚀 Hızlı Deployment
+## 🚀 Quick Deployment
 
-### Local'den VM'ye Tek Komutla Deploy
+### Deploy from Local to VM in One Command
 ```bash
 cd ~/Desktop/oncall-slack-bot
 ./deploy-to-vm.sh
 ```
 
-### VM'de İlk Kurulum
+### First-Time Setup on VM
 ```bash
-# VM'ye bağlan
+# SSH to VM
 ssh -i your-key.pem ubuntu@vm-ip
 
-# Setup script'i çalıştır
+# Run setup script
 bash vm-setup.sh
 
-# Bot'u başlat
+# Start bot
 cd ~/oncall-slack-bot
 pm2 start index.js --name carlton-oncall-bot -- start
 pm2 save
@@ -25,36 +25,36 @@ pm2 startup
 
 ---
 
-## 📋 Sık Kullanılan Komutlar
+## 📋 Frequently Used Commands
 
-### Bot Yönetimi
+### Bot Management
 ```bash
-# Status kontrol
+# Check status
 pm2 status
 
-# Log'ları izle
+# Watch logs
 pm2 logs carlton-oncall-bot
 
-# Bot'u restart et
+# Restart bot
 pm2 restart carlton-oncall-bot
 
-# Bot'u durdur
+# Stop bot
 pm2 stop carlton-oncall-bot
 
-# Bot'u başlat
+# Start bot
 pm2 start carlton-oncall-bot
 ```
 
-### Kod Güncelleme
+### Code Updates
 ```bash
-# Local'de yeni kodu paketle
+# Package new code locally
 cd ~/Desktop
 tar --exclude='node_modules' -czf bot.tar.gz oncall-slack-bot/
 
-# VM'ye transfer et
+# Transfer to VM
 scp -i key.pem bot.tar.gz ubuntu@vm-ip:~/
 
-# VM'de güncelle
+# Update on VM
 ssh -i key.pem ubuntu@vm-ip
 tar -xzf bot.tar.gz
 cd oncall-slack-bot
@@ -62,15 +62,15 @@ npm install
 pm2 restart carlton-oncall-bot
 ```
 
-### Test Komutları
+### Test Commands
 ```bash
-# Datadog bağlantısını test et (mesaj göndermez)
+# Test Datadog connection (no messages sent)
 node test-connection-only.js
 
-# Slack token'ı test et (mesaj göndermez)
+# Test Slack token (no messages sent)
 node test-slack-token-only.js
 
-# Gerçek mesaj gönder (TEST - dikkatli kullan!)
+# Send real message (TEST - use carefully!)
 npm test
 ```
 
@@ -78,32 +78,32 @@ npm test
 
 ## 🔧 Troubleshooting
 
-### Bot çalışmıyor
+### Bot not working
 ```bash
-# Log'lara bak
+# Check error logs
 pm2 logs carlton-oncall-bot --err
 
-# Manuel başlat
+# Start manually
 cd ~/oncall-slack-bot
 node index.js start
 ```
 
-### Mesajlar gitmiyor
+### Messages not being sent
 ```bash
-# Environment variables kontrol
+# Check environment variables
 cat .env | grep -v "^#"
 
-# Test scriptlerini çalıştır
+# Run test scripts
 node test-connection-only.js
 node test-slack-token-only.js
 ```
 
-### Memory sorunu
+### Memory issues
 ```bash
-# Memory kullanımını gör
+# Check memory usage
 pm2 monit
 
-# Max memory ile restart ayarla
+# Set max memory restart
 pm2 delete carlton-oncall-bot
 pm2 start index.js --name carlton-oncall-bot --max-memory-restart 300M -- start
 pm2 save
@@ -113,49 +113,49 @@ pm2 save
 
 ## 📅 Scheduled Posts
 
-| Kanal | Zamanlama | Açıklama |
-|-------|-----------|----------|
-| **c1-oncall-bot** | Her gün 09:00 AM EST | Tüm takımların oncall bilgileri |
-| **system-production** | Her Pazartesi 08:00 AM EST | Sadece topic güncelleme |
+| Channel | Schedule | Description |
+|---------|----------|-------------|
+| **c1-oncall-bot** | Every day 09:00 AM EST | All teams on-call information |
+| **system-production** | Every Monday 08:00 AM EST | Topic update only |
 
 ---
 
-## 🔐 Önemli Dosyalar
+## 🔐 Important Files
 
-- `index.js` - Ana bot kodu
-- `.env` - Environment variables (GİZLİ!)
-- `post-general-oncall.js` - Tüm takımları gösteren mesaj
-- `package.json` - Bağımlılıklar
-- `CLOUD_DEPLOYMENT_GUIDE.md` - Detaylı deployment guide
+- `index.js` - Main bot code
+- `.env` - Environment variables (SECRET!)
+- `post-general-oncall.js` - All teams message
+- `package.json` - Dependencies
+- `CLOUD_DEPLOYMENT_GUIDE.md` - Detailed deployment guide
 
 ---
 
 ## 📊 System Requirements
 
 - **Minimum**: 1 vCPU, 512MB RAM, 10GB disk
-- **Önerilen**: 1 vCPU, 1GB RAM, 10GB disk
-- **OS**: Ubuntu 20.04+ veya Amazon Linux 2
+- **Recommended**: 1 vCPU, 1GB RAM, 10GB disk
+- **OS**: Ubuntu 20.04+ or Amazon Linux 2
 - **Node.js**: v18+
-- **Network**: Outbound HTTPS (443) erişimi
+- **Network**: Outbound HTTPS (443) access
 
 ---
 
 ## 🆘 Emergency Commands
 
-### Bot tamamen durdu, hemen başlat
+### Bot completely stopped, start immediately
 ```bash
 pm2 restart carlton-oncall-bot || pm2 start ~/oncall-slack-bot/index.js --name carlton-oncall-bot -- start
 ```
 
-### Log dosyası çok büyüdü
+### Log file too large
 ```bash
 pm2 flush carlton-oncall-bot
 ```
 
-### VM reboot oldu, bot çalışmıyor
+### VM rebooted, bot not running
 ```bash
-# PM2 startup komutunu çalıştırdıysanız otomatik başlar
-# Manuel kontrol:
+# If you ran pm2 startup, it should auto-start
+# Manual check:
 pm2 resurrect
 pm2 list
 ```
@@ -172,15 +172,15 @@ pm2 list
 
 ## 🎯 Deployment Checklist
 
-- [ ] VM oluşturuldu ve erişilebilir
-- [ ] `vm-setup.sh` çalıştırıldı
-- [ ] Bot kodu transfer edildi
-- [ ] `.env` dosyası yapılandırıldı
-- [ ] `npm install` tamamlandı
-- [ ] Bot PM2 ile başlatıldı
-- [ ] `pm2 save` ve `pm2 startup` yapıldı
-- [ ] Test mesajları başarılı
-- [ ] Log'lar normal görünüyor
+- [ ] VM created and accessible
+- [ ] `vm-setup.sh` executed
+- [ ] Bot code transferred
+- [ ] `.env` file configured
+- [ ] `npm install` completed
+- [ ] Bot started with PM2
+- [ ] `pm2 save` and `pm2 startup` done
+- [ ] Test messages successful
+- [ ] Logs look normal
 
 ---
 

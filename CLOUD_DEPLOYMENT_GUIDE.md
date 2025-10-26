@@ -1,317 +1,228 @@
 # Carlton One On-Call Bot - Cloud VM Deployment Guide
 
-## 📋 Gereksinimler
+> **Note**: This bot has been successfully deployed to AWS (35.183.112.68). This guide is for reference or redeployment.
 
-- Cloud VM (AWS EC2, Azure VM, veya GCP Compute Engine)
-- OS: Ubuntu 20.04+ veya Amazon Linux 2
+## 📋 Requirements
+
+- Cloud VM (AWS EC2, Azure VM, or GCP Compute Engine)
+- OS: Ubuntu 20.04+ or Amazon Linux 2
+- Minimum: 1 vCPU, 512MB RAM, 10GB disk
 - Node.js 18+
 - PM2 (process manager)
-- Git (isteğe bağlı)
+- SSH access
 
 ---
 
-## 🚀 Hızlı Deployment (15 dakika)
+## 🚀 Quick Deployment (15 minutes)
 
-### 1. Cloud VM Hazırlığı
+### Option A: Automatic Deployment (Recommended)
 
-**Minimum VM Özellikleri:**
-- CPU: 1 vCPU
-- RAM: 512 MB (1 GB önerilen)
-- Disk: 10 GB
-- Network: Public IP + SSH erişimi
-- Security Group: Sadece SSH (22) portuna ihtiyaç var (bot outbound connection kullanır)
-
-**VM Oluşturduktan Sonra SSH ile Bağlan:**
+From your local machine:
 ```bash
-ssh -i your-key.pem ubuntu@your-vm-ip
+cd ~/Desktop/oncall-slack-bot
+./deploy-to-vm.sh
 ```
 
----
+The script will:
+1. Package the bot code
+2. Transfer to VM via SCP
+3. Extract and install dependencies
+4. Guide you through PM2 setup
 
-### 2. VM'de Node.js Kurulumu
+### Option B: Manual Deployment
 
-**Ubuntu/Debian için:**
+#### 1. Prepare Cloud VM
+
+**Create VM with:**
+- Ubuntu 20.04 or Amazon Linux 2
+- 1 vCPU, 512MB-1GB RAM
+- Public IP address
+- SSH key pair
+- Security Group: Allow SSH (port 22)
+
+**Connect via SSH:**
 ```bash
-# Node.js 18.x kurulumu
+ssh -i your-key.pem ubuntu@vm-ip
+```
+
+#### 2. Install Node.js on VM
+
+**For Ubuntu/Debian:**
+```bash
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt-get install -y nodejs
-
-# Kurulumu doğrula
-node --version  # v18.x.x görmeli
-npm --version   # 9.x.x veya üstü görmeli
+node --version  # Should show v18.x.x
 ```
 
-**Amazon Linux 2 için:**
+**For Amazon Linux 2:**
 ```bash
-# Node.js 18.x kurulumu
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
 source ~/.bashrc
 nvm install 18
 nvm use 18
-
-# Kurulumu doğrula
-node --version
-npm --version
 ```
 
----
+#### 3. Transfer Bot Code to VM
 
-### 3. Bot Kodunu VM'ye Transfer Et
-
-**Seçenek A: SCP ile Transfer (Önerilen)**
-
-Local makinende (Mac):
+**From local machine:**
 ```bash
 cd ~/Desktop
-tar -czf oncall-slack-bot.tar.gz oncall-slack-bot/
-scp -i your-key.pem oncall-slack-bot.tar.gz ubuntu@your-vm-ip:~/
+tar --exclude='node_modules' --exclude='.git' -czf bot.tar.gz oncall-slack-bot/
+scp -i key.pem bot.tar.gz ubuntu@vm-ip:~/
 ```
 
-VM'de:
+**On VM:**
 ```bash
-tar -xzf oncall-slack-bot.tar.gz
+tar -xzf bot.tar.gz
 cd oncall-slack-bot
+npm install --production
 ```
 
-**Seçenek B: Git ile (Eğer Bitbucket'ta varsa)**
+#### 4. Configure Environment
+
+Verify `.env` file has correct values:
 ```bash
-cd ~
-git clone ssh://git@bitbucket.util.carlton.ca:7999/sys/datadog-on-call-slack-bot.git
-cd datadog-on-call-slack-bot
+cat .env | grep -v "^#"
 ```
 
-**Seçenek C: Manuel Dosya Kopyalama**
+Required variables:
+- `DATADOG_API_KEY`
+- `DATADOG_APP_KEY`
+- `SLACK_BOT_TOKEN`
+- `SLACK_CHANNEL_1_ID` (c1-oncall-bot)
+- `SLACK_CHANNEL_2_ID` (system-production)
+
+#### 5. Install PM2 and Start Bot
+
 ```bash
-# VM'de klasör oluştur
-mkdir -p ~/oncall-slack-bot
+# Install PM2 globally
+sudo npm install -g pm2
+
+# Start bot
 cd ~/oncall-slack-bot
+pm2 start index.js --name carlton-oncall-bot -- start
 
-# Gerekli dosyaları local'den kopyala
-# (Her dosyayı scp ile ayrı ayrı kopyalayın)
+# Save PM2 configuration
+pm2 save
+
+# Enable auto-start on boot
+pm2 startup
+# Follow the command it provides (run with sudo)
+```
+
+#### 6. Verify Deployment
+
+```bash
+# Check bot status
+pm2 status
+
+# Watch logs
+pm2 logs carlton-oncall-bot
+
+# Should see:
+# ✅ Bot is running! Waiting for scheduled posts...
 ```
 
 ---
 
-### 4. Bağımlılıkları Yükle
+## 🔧 Bot Management
 
+### Status and Logs
 ```bash
-cd ~/oncall-slack-bot
+pm2 status                      # Check if bot is running
+pm2 logs carlton-oncall-bot     # View logs (live)
+pm2 logs carlton-oncall-bot --lines 100  # Last 100 lines
+pm2 logs carlton-oncall-bot --err        # Errors only
+```
+
+### Start/Stop/Restart
+```bash
+pm2 restart carlton-oncall-bot  # Restart bot
+pm2 stop carlton-oncall-bot     # Stop bot
+pm2 start carlton-oncall-bot    # Start bot
+pm2 delete carlton-oncall-bot   # Remove from PM2
+```
+
+### Update Bot Code
+```bash
+# On local machine
+cd ~/Desktop
+tar --exclude='node_modules' -czf bot.tar.gz oncall-slack-bot/
+scp -i key.pem bot.tar.gz ubuntu@vm-ip:~/
+
+# On VM
+tar -xzf bot.tar.gz
+cd oncall-slack-bot
 npm install
-```
-
-**Beklenen çıktı:**
-```
-added 150 packages in 15s
+pm2 restart carlton-oncall-bot
 ```
 
 ---
 
-### 5. Environment Variables Ayarla
+## 📊 Configuration
 
-`.env` dosyasının doğru yapılandırıldığından emin ol:
+### Multi-Channel Setup
 
-```bash
-cat .env
-```
+The bot posts to two channels with different schedules:
 
-**Kontrol listesi:**
-- ✅ `DATADOG_API_KEY` dolu mu?
-- ✅ `DATADOG_APP_KEY` dolu mu?
-- ✅ `SLACK_BOT_TOKEN` dolu mu?
-- ✅ `SLACK_CHANNEL_1_ID` dolu mu? (c1-oncall-bot kanalı)
-- ✅ `SLACK_CHANNEL_2_ID` dolu mu? (system-production kanalı)
+**Channel 1: c1-oncall-bot**
+- Schedule: Every day at 9:00 AM EST
+- Mode: `general-all-teams`
+- Shows: ALL teams' on-call information
+- Cron: `0 9 * * *`
 
-Eğer düzenleme gerekiyorsa:
-```bash
-nano .env
-# Düzenle, kaydet (Ctrl+O, Enter, Ctrl+X)
-```
+**Channel 2: system-production**
+- Schedule: Every Monday at 8:00 AM EST
+- Mode: `topic-only`
+- Updates: Channel topic with Infrastructure on-call
+- Cron: `0 8 * * 1`
+
+### Timezone
+
+Bot uses `America/Toronto` timezone (EST/EDT).
+Configured in `index.js` lines 414-416 and 434-436.
 
 ---
 
-### 6. Test Et (İSTEĞE BAĞLI - Slack'e mesaj gönderir!)
+## 🧪 Testing
+
+### Test Without Sending Messages
+
+```bash
+# Test Datadog API connection
+node test-connection-only.js
+
+# Test Slack bot token
+node test-slack-token-only.js
+```
+
+### Send Test Message (Real Post to Slack!)
 
 ```bash
 npm test
+# or
+node index.js now
 ```
 
-**NOT:** Bu komut gerçekten Slack kanallarına mesaj gönderir. Atlamak isterseniz direkt 7. adıma geç.
+**Warning**: This will actually post to configured Slack channels!
 
 ---
 
-### 7. PM2 Kurulumu ve Bot'u Başlat
+## 🔐 Security
 
-**PM2 Global Kurulum:**
+### Protect Sensitive Files
 ```bash
-sudo npm install -g pm2
+chmod 600 .env
+chmod 700 ~/.ssh
 ```
 
-**Bot'u PM2 ile Başlat:**
-```bash
-cd ~/oncall-slack-bot
-pm2 start index.js --name carlton-oncall-bot -- start
-```
-
-**Başarılı çıktı:**
-```
-[PM2] Starting index.js in fork_mode (1 instance)
-[PM2] Done.
-┌────┬────────────────────────┬─────────┬─────────┐
-│ id │ name                   │ status  │ restart │
-├────┼────────────────────────┼─────────┼─────────┤
-│ 0  │ carlton-oncall-bot     │ online  │ 0       │
-└────┴────────────────────────┴─────────┴─────────┘
-```
-
-**Bot Log'larını Kontrol Et:**
-```bash
-pm2 logs carlton-oncall-bot
-```
-
-Beklenen çıktı:
-```
-🤖 On-Call Slack Bot starting...
-📌 Pin messages: true
-
-📢 Multi-channel mode: 2 channels configured
-
-Channel 1: c1-oncall-bot
-  📍 Channel ID: C09MWB138J3
-  📅 Schedule: 0 9 * * *
-  🎯 Datadog Schedule: 0c5b7058-8bcf-4e97-84ff-1c1af71c0606
-
-Channel 2: system-production
-  📍 Channel ID: GDP0JSA4Q
-  📅 Schedule: 0 8 * * 1
-  🎯 Datadog Schedule: 0c5b7058-8bcf-4e97-84ff-1c1af71c0606
-
-✅ Bot is running! Waiting for scheduled posts...
-```
-
-**Log'lardan çık:** `Ctrl+C`
-
----
-
-### 8. Bot'u Otomatik Başlatma (System Reboot'ta)
-
-```bash
-pm2 save
-pm2 startup
-```
-
-`pm2 startup` komutu size bir komut verecek, onu sudo ile çalıştır:
-```bash
-sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u ubuntu --hp /home/ubuntu
-```
-
-**Doğrulama:**
-```bash
-pm2 list
-```
-
----
-
-## 🔧 Bot Yönetimi Komutları
-
-### Bot Durumunu Kontrol Et
-```bash
-pm2 status
-pm2 list
-```
-
-### Log'ları İzle
-```bash
-# Tüm log'lar (live)
-pm2 logs carlton-oncall-bot
-
-# Sadece son 50 satır
-pm2 logs carlton-oncall-bot --lines 50
-
-# Hataları göster
-pm2 logs carlton-oncall-bot --err
-```
-
-### Bot'u Durdur
-```bash
-pm2 stop carlton-oncall-bot
-```
-
-### Bot'u Yeniden Başlat
-```bash
-pm2 restart carlton-oncall-bot
-```
-
-### Bot'u Sil (PM2'den kaldır)
-```bash
-pm2 delete carlton-oncall-bot
-```
-
-### Bot'u Yeniden Yükle (kod değişikliği sonrası)
-```bash
-# Yeni kodu transfer et
-cd ~/oncall-slack-bot
-
-# Bağımlılıkları güncelle
-npm install
-
-# Bot'u yeniden başlat
-pm2 restart carlton-oncall-bot
-```
-
----
-
-## 📊 Monitoring ve Troubleshooting
-
-### Bot Çalışıyor mu?
-```bash
-pm2 status carlton-oncall-bot
-```
-
-**Beklenen:**
-- Status: `online` ✅
-- Uptime: Çalışma süresi
-- Restart: Düşükse iyi (sürekli restart oluyorsa sorun var)
-
-### Bot Neden Restart Oluyor?
-
-```bash
-pm2 logs carlton-oncall-bot --err
-```
-
-**Yaygın hatalar:**
-- `Missing required configuration`: `.env` dosyası eksik/yanlış
-- `Error fetching on-call data`: Datadog API key hatalı
-- `Error posting to Slack`: Slack token hatalı veya bot davet edilmemiş
-
-### Disk Doldu mu?
-```bash
-df -h
-```
-
-### Memory Kullanımı
-```bash
-pm2 monit
-```
-
----
-
-## 🔐 Güvenlik Önerileri
-
-### 1. .env Dosyası İzinleri
-```bash
-chmod 600 ~/.env
-```
-
-### 2. SSH Key-based Authentication
-Şifre ile login'i kapat, sadece SSH key kullan.
-
-### 3. Firewall Ayarları
+### Firewall
 ```bash
 sudo ufw allow 22/tcp
 sudo ufw enable
 ```
 
-### 4. Otomatik Güvenlik Güncellemeleri
+### Auto Security Updates
 ```bash
 sudo apt-get install unattended-upgrades
 sudo dpkg-reconfigure --priority=low unattended-upgrades
@@ -319,160 +230,159 @@ sudo dpkg-reconfigure --priority=low unattended-upgrades
 
 ---
 
-## 📅 Zamanlama Bilgileri
+## 🆘 Troubleshooting
 
-Bot şu zamanlarda otomatik mesaj gönderir:
-
-| Kanal | Zamanlama | Ne Yapar |
-|-------|-----------|----------|
-| **c1-oncall-bot** | Her gün 09:00 AM EST | TÜM takımların oncall bilgilerini gösterir |
-| **system-production** | Her Pazartesi 08:00 AM EST | Sadece Infrastructure oncall'u için topic günceller |
-
-**Timezone:** America/Toronto (EST/EDT)
-
----
-
-## 🔄 Güncelleme Prosedürü
-
-Kod değişikliği yaptıktan sonra:
-
-1. **Local'de değişikliği yap**
-2. **VM'ye transfer et:**
-   ```bash
-   # Local'de
-   cd ~/Desktop
-   tar -czf oncall-slack-bot.tar.gz oncall-slack-bot/
-   scp -i your-key.pem oncall-slack-bot.tar.gz ubuntu@your-vm-ip:~/
-
-   # VM'de
-   cd ~
-   tar -xzf oncall-slack-bot.tar.gz
-   cd oncall-slack-bot
-   npm install
-   pm2 restart carlton-oncall-bot
-   ```
-
-3. **Log'ları kontrol et:**
-   ```bash
-   pm2 logs carlton-oncall-bot
-   ```
-
----
-
-## 📞 Sorun Giderme
-
-### Sorun: Bot başlamıyor
+### Bot Not Running
 ```bash
-# Log'lara bak
+# Check PM2 status
+pm2 status
+
+# View error logs
 pm2 logs carlton-oncall-bot --err
 
-# Manuel başlat ve hatayı gör
+# Try manual start
 cd ~/oncall-slack-bot
 node index.js start
 ```
 
-### Sorun: Mesajlar gitmiyor
-```bash
-# Datadog bağlantısını test et
-node test-connection-only.js
+### Messages Not Being Sent
 
-# Slack token'ı test et
+**Check Datadog Connection:**
+```bash
+node test-connection-only.js
+```
+
+**Check Slack Token:**
+```bash
 node test-slack-token-only.js
 ```
 
-### Sorun: Zamanlama çalışmıyor
+**Check Environment Variables:**
 ```bash
-# VM'nin timezone'unu kontrol et
-timedatectl
-
-# Eğer yanlışsa düzelt (örnek: EST için)
-sudo timedatectl set-timezone America/Toronto
+cat .env | grep -E "DATADOG|SLACK"
 ```
 
-### Sorun: Bot memory leak yapıyor
-```bash
-# Restart et
-pm2 restart carlton-oncall-bot
+### Bot Keeps Restarting
 
-# Otomatik restart ayarla (max memory 300MB)
+```bash
+# Check memory usage
+pm2 monit
+
+# Set memory limit
+pm2 delete carlton-oncall-bot
 pm2 start index.js --name carlton-oncall-bot --max-memory-restart 300M -- start
 pm2 save
 ```
+
+### Wrong Timezone
+
+```bash
+# Check system timezone
+timedatectl
+
+# Set to EST
+sudo timedatectl set-timezone America/Toronto
+```
+
+### After VM Reboot
+
+If PM2 startup was configured, bot should auto-start.
+
+```bash
+# Check if running
+pm2 list
+
+# If not running
+pm2 resurrect
+```
+
+---
+
+## 📅 Scheduled Execution
+
+Bot waits for cron schedule times and automatically posts:
+
+| Time | Channel | Action |
+|------|---------|--------|
+| 09:00 AM EST daily | c1-oncall-bot | Post all teams' on-call info |
+| 08:00 AM EST Monday | system-production | Update topic with Infrastructure on-call |
+
+**Timezone**: America/Toronto (handles EST/EDT automatically)
+
+---
+
+## 📈 Monitoring
+
+### PM2 Monitoring
+```bash
+pm2 monit  # Real-time monitoring
+pm2 logs carlton-oncall-bot  # Watch logs
+```
+
+### Check Successful Posts
+
+Bot logs successful posts:
+```
+✅ Message posted successfully!
+✅ Channel topic updated!
+```
+
+Look for errors:
+```bash
+pm2 logs carlton-oncall-bot --err
+```
+
+---
+
+## 🔄 Backup and Recovery
+
+### Backup Configuration
+```bash
+# Backup .env file
+cp .env .env.backup
+
+# Backup entire bot directory
+cd ~
+tar -czf oncall-bot-backup-$(date +%Y%m%d).tar.gz oncall-slack-bot/
+```
+
+### Recovery
+```bash
+# Restore from backup
+tar -xzf oncall-bot-backup-YYYYMMDD.tar.gz
+cd oncall-slack-bot
+npm install
+pm2 restart carlton-oncall-bot
+```
+
+---
+
+## 📞 Support
+
+- **Datadog Console**: https://app.datadoghq.eu/on-call/schedules
+- **Slack Workspace**: Carlton One
+- **Repository**: ssh://git@bitbucket.util.carlton.ca:7999/sys/datadog-on-call-slack-bot.git
+- **Current Deployment**: AWS EC2 35.183.112.68
 
 ---
 
 ## ✅ Deployment Checklist
 
-### Pre-deployment
-- [ ] Cloud VM oluşturuldu
-- [ ] SSH erişimi var
-- [ ] Node.js 18+ kuruldu
-- [ ] PM2 kuruldu
-
-### Deployment
-- [ ] Bot kodu VM'ye transfer edildi
-- [ ] `npm install` çalıştırıldı
-- [ ] `.env` dosyası yapılandırıldı
-- [ ] Bot PM2 ile başlatıldı
-- [ ] Log'lar kontrol edildi ve bot çalışıyor
-
-### Post-deployment
-- [ ] `pm2 save` çalıştırıldı
-- [ ] `pm2 startup` yapılandırıldı
-- [ ] Slack kanallarında bot'un aktif olduğu test edildi
-- [ ] Bir sonraki scheduled post zamanı not edildi
-
-### Monitoring
-- [ ] `pm2 status` ile düzenli kontrol yapılacak
-- [ ] Slack'te mesajların geldiği doğrulanacak
-- [ ] VM'nin uptime'ı takip edilecek
-
----
-
-## 🎯 Özet
-
-```bash
-# 1. VM'e bağlan
-ssh -i key.pem ubuntu@vm-ip
-
-# 2. Node.js kur
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# 3. Bot kodunu transfer et
-# (scp ile)
-
-# 4. Bağımlılıkları yükle
-cd oncall-slack-bot
-npm install
-
-# 5. PM2 kur ve başlat
-sudo npm install -g pm2
-pm2 start index.js --name carlton-oncall-bot -- start
-pm2 save
-pm2 startup
-
-# 6. Kontrol et
-pm2 logs carlton-oncall-bot
-```
-
-**Hazır! Bot artık cloud'da 7/24 çalışıyor.** 🚀
-
----
-
-## 📊 Sonraki Scheduled Post'lar
-
-Bot başarıyla deploy edildikten sonra:
-
-- **c1-oncall-bot**: Bir sonraki gün 09:00 AM EST'de mesaj gönderecek
-- **system-production**: Bir sonraki Pazartesi 08:00 AM EST'de topic güncelleyecek
-
-Log'lardan scheduled post'ları izleyebilirsiniz:
-```bash
-pm2 logs carlton-oncall-bot | grep "Scheduled post"
-```
+- [ ] Cloud VM created and accessible
+- [ ] Node.js 18+ installed
+- [ ] PM2 installed globally
+- [ ] Bot code transferred and extracted
+- [ ] Dependencies installed (`npm install`)
+- [ ] `.env` file configured correctly
+- [ ] Bot started with PM2
+- [ ] PM2 configuration saved (`pm2 save`)
+- [ ] Auto-start enabled (`pm2 startup`)
+- [ ] Logs show bot is running
+- [ ] Test connections successful
+- [ ] Waiting for next scheduled post
 
 ---
 
 **Carlton One - System Production Team**
-*Deployment Guide v1.0*
+*Cloud Deployment Guide v2.0*
+*Last Updated: 2025-10-25*
