@@ -16,7 +16,24 @@ const config = {
     channelId: process.env.SLACK_CHANNEL_ID
   },
   cronSchedule: process.env.CRON_SCHEDULE || '0 9 * * *',
-  pinMessage: process.env.PIN_MESSAGE === 'true'
+  pinMessage: process.env.PIN_MESSAGE === 'true',
+  // Multi-channel configuration
+  channels: [
+    {
+      id: process.env.SLACK_CHANNEL_1_ID,
+      scheduleId: process.env.SLACK_CHANNEL_1_SCHEDULE_ID,
+      cronSchedule: '0 9 * * *', // Every day at 9 AM EST
+      name: 'c1-oncall-bot',
+      mode: 'general-all-teams' // Uses post-general-oncall.js for ALL teams
+    },
+    {
+      id: process.env.SLACK_CHANNEL_2_ID,
+      scheduleId: process.env.SLACK_CHANNEL_2_SCHEDULE_ID,
+      cronSchedule: '0 8 * * 1', // Every Monday at 8 AM EST
+      name: 'system-production',
+      mode: 'topic-only' // Only update topic with Infrastructure on-call
+    }
+  ].filter(c => c.id) // Only include channels that are configured
 };
 
 // Initialize Slack client
@@ -100,7 +117,14 @@ function formatOnCallMessage(onCallData, scheduleName = null) {
       type: 'header',
       text: {
         type: 'plain_text',
-        text: '🚨 On-Call Engineer'
+        text: '🔧 Carlton One - System Production On-Call'
+      }
+    },
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '*Current On-Call Engineer for System Production Team*'
       }
     },
     {
@@ -144,7 +168,7 @@ function formatOnCallMessage(onCallData, scheduleName = null) {
     type: 'section',
     text: {
       type: 'mrkdwn',
-      text: `*📋 ${scheduleName || 'Schedule'}*\n👤 *Engineer:* ${userName}${userEmail ? ` (${userEmail})` : ''}${timeRange}`
+      text: `*📋 Schedule:* ${scheduleName || 'System Production'}\n👤 *On-Call Engineer:* ${userName}${userEmail ? `\n📧 *Email:* ${userEmail}` : ''}${timeRange}`
     }
   });
 
@@ -153,22 +177,124 @@ function formatOnCallMessage(onCallData, scheduleName = null) {
     elements: [
       {
         type: 'mrkdwn',
-        text: `_Updated: ${new Date().toLocaleString('en-US', { timeZone: 'America/Toronto' })} EST_`
+        text: `_🏢 Carlton One - System Production Team | Updated: ${new Date().toLocaleString('en-US', { timeZone: 'America/Toronto' })} EST_`
       }
     ]
   });
 
   return {
-    text: '🚨 On-Call Engineer',
+    text: '🔧 Carlton One - System Production On-Call',
     blocks: blocks
   };
 }
 
 /**
+ * Update Slack channel topic with on-call information
+ */
+async function updateChannelTopic(onCallData, scheduleName) {
+  return updateChannelTopicForChannel(onCallData, scheduleName, config.slack.channelId);
+}
+
+/**
+ * Update Slack channel topic for a specific channel
+ */
+async function updateChannelTopicForChannel(onCallData, scheduleName, channelId) {
+  try {
+    if (!onCallData || !onCallData.data) {
+      return;
+    }
+
+    const oncallData = onCallData.data;
+    const attributes = oncallData.attributes || {};
+
+    // Find user from included resources
+    let user = null;
+    if (onCallData.included && onCallData.included.length > 0) {
+      user = onCallData.included.find(item => item.type === 'users');
+    }
+
+    const userName = user?.attributes?.name || user?.attributes?.email || 'Unknown User';
+    const start = attributes.start ? new Date(attributes.start) : null;
+    const end = attributes.end ? new Date(attributes.end) : null;
+
+    let shiftInfo = '';
+    if (start && end) {
+      const startStr = start.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'America/Toronto'
+      });
+      const endStr = end.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'America/Toronto'
+      });
+      shiftInfo = ` | Shift: ${startStr} - ${endStr} EST`;
+    }
+
+    const topic = `On-Call: ${userName}${shiftInfo} | 🔧 Carlton One - Infrastructure`;
+
+    await slackClient.conversations.setTopic({
+      channel: channelId,
+      topic: topic
+    });
+
+    console.log('✅ Channel topic updated!');
+  } catch (error) {
+    console.error('⚠️  Could not update channel topic:', error.message);
+    // Don't throw - topic update is optional
+  }
+}
+
+/**
+ * Post general on-call for all teams (uses post-general-oncall.js logic)
+ */
+async function postGeneralAllTeams(channelId) {
+  const { exec } = require('child_process');
+  const util = require('util');
+  const execPromise = util.promisify(exec);
+
+  try {
+    console.log(`📨 Posting ALL teams on-call to channel ${channelId}...`);
+
+    // Temporarily set channel ID for the script
+    const originalChannelId = process.env.SLACK_CHANNEL_ID;
+    process.env.SLACK_CHANNEL_ID = channelId;
+
+    // Run the general oncall script
+    const { stdout, stderr } = await execPromise('node post-general-oncall.js');
+
+    console.log(stdout);
+    if (stderr) console.error(stderr);
+
+    // Restore original channel ID
+    process.env.SLACK_CHANNEL_ID = originalChannelId;
+
+    console.log('✅ General all-teams on-call posted!');
+    return { mode: 'general-all-teams', success: true };
+
+  } catch (error) {
+    console.error('Error posting general on-call:', error.message);
+    throw error;
+  }
+}
+
+/**
  * Post on-call information to Slack
  */
-async function postOnCallToSlack(scheduleId = null) {
+async function postOnCallToSlack(scheduleId = null, channelId = null, mode = 'full') {
   try {
+    const targetChannel = channelId || config.slack.channelId;
+
+    // If general-all-teams mode, use the general oncall script
+    if (mode === 'general-all-teams') {
+      return await postGeneralAllTeams(targetChannel);
+    }
+
     console.log('Fetching on-call information from Datadog...');
 
     // Get schedule details first to get the name
@@ -188,22 +314,37 @@ async function postOnCallToSlack(scheduleId = null) {
       ? await getScheduleOnCall(scheduleId)
       : await getOnCallInfo();
 
+    // If topic-only mode, just update the topic
+    if (mode === 'topic-only') {
+      console.log(`📝 Topic-only mode: Updating channel topic for ${targetChannel}...`);
+      await updateChannelTopicForChannel(onCallData, scheduleName, targetChannel);
+      console.log('✅ Topic updated successfully!');
+      return { mode: 'topic-only', success: true };
+    }
+
+    // Message-only or full mode: post message
     console.log('Formatting message...');
     const message = formatOnCallMessage(onCallData, scheduleName);
 
-    console.log(`Posting to Slack channel: ${config.slack.channelId}`);
+    console.log(`Posting to Slack channel: ${targetChannel}`);
     const result = await slackClient.chat.postMessage({
-      channel: config.slack.channelId,
+      channel: targetChannel,
       ...message
     });
 
     console.log('✅ Message posted successfully!');
 
+    // Update channel topic only if full mode (not message-only)
+    if (mode === 'full') {
+      console.log('Updating channel topic...');
+      await updateChannelTopicForChannel(onCallData, scheduleName, targetChannel);
+    }
+
     // Pin the message if configured
     if (config.pinMessage && result.ts) {
       console.log('Pinning message to channel...');
       await slackClient.pins.add({
-        channel: config.slack.channelId,
+        channel: targetChannel,
         timestamp: result.ts
       });
       console.log('✅ Message pinned successfully!');
@@ -247,24 +388,56 @@ function validateConfig() {
  */
 function startScheduledBot() {
   console.log('🤖 On-Call Slack Bot starting...');
-  console.log(`📅 Schedule: ${config.cronSchedule}`);
-  console.log(`📍 Channel: ${config.slack.channelId}`);
   console.log(`📌 Pin messages: ${config.pinMessage}`);
 
   validateConfig();
 
-  // Schedule the cron job
-  cron.schedule(config.cronSchedule, async () => {
-    console.log(`\n⏰ Scheduled post triggered at ${new Date().toISOString()}`);
-    try {
-      await postOnCallToSlack(config.datadog.scheduleId);
-    } catch (error) {
-      console.error('Failed to post scheduled update:', error);
-    }
-  });
+  // Check if we have multi-channel configuration
+  if (config.channels && config.channels.length > 0) {
+    console.log(`\n📢 Multi-channel mode: ${config.channels.length} channels configured`);
 
-  console.log('\n✅ Bot is running! Waiting for scheduled posts...');
-  console.log('Press Ctrl+C to stop.\n');
+    config.channels.forEach((channel, index) => {
+      console.log(`\nChannel ${index + 1}: ${channel.name}`);
+      console.log(`  📍 Channel ID: ${channel.id}`);
+      console.log(`  📅 Schedule: ${channel.cronSchedule}`);
+      console.log(`  🎯 Datadog Schedule: ${channel.scheduleId}`);
+
+      // Schedule cron job for each channel
+      cron.schedule(channel.cronSchedule, async () => {
+        console.log(`\n⏰ Scheduled post for ${channel.name} at ${new Date().toISOString()}`);
+        console.log(`   Mode: ${channel.mode}`);
+        try {
+          await postOnCallToSlack(channel.scheduleId, channel.id, channel.mode);
+        } catch (error) {
+          console.error(`Failed to post to ${channel.name}:`, error);
+        }
+      }, {
+        timezone: 'America/Toronto'
+      });
+    });
+
+    console.log('\n✅ Bot is running! Waiting for scheduled posts...');
+    console.log('Press Ctrl+C to stop.\n');
+  } else {
+    // Legacy single-channel mode
+    console.log(`📅 Schedule: ${config.cronSchedule}`);
+    console.log(`📍 Channel: ${config.slack.channelId}`);
+
+    // Schedule the cron job
+    cron.schedule(config.cronSchedule, async () => {
+      console.log(`\n⏰ Scheduled post triggered at ${new Date().toISOString()}`);
+      try {
+        await postOnCallToSlack(config.datadog.scheduleId);
+      } catch (error) {
+        console.error('Failed to post scheduled update:', error);
+      }
+    }, {
+      timezone: 'America/Toronto'
+    });
+
+    console.log('\n✅ Bot is running! Waiting for scheduled posts...');
+    console.log('Press Ctrl+C to stop.\n');
+  }
 }
 
 /**

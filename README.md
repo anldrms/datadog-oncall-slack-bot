@@ -2,36 +2,14 @@
 
 A Slack bot that automatically fetches and posts on-call engineer information from Datadog to Slack channels.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Node](https://img.shields.io/badge/node-%3E%3D14.0.0-brightgreen.svg)
-
 ## Features
 
-- 🔄 Fetches current on-call information from Datadog On-Call schedules
-- 💬 Posts formatted messages to Slack channels
-- 📌 Optional automatic message pinning
-- ⏰ Configurable scheduling (cron-based)
-- 📊 Support for multiple on-call schedules
-- ✨ Beautiful formatted messages with engineer details and shift times
-- 🎯 Interactive setup wizard with validation
-- 🔍 Automatic schedule discovery
-
-## Screenshots
-
-### Slack Message Example
-The bot posts beautifully formatted on-call information:
-
-```
-🚨 Today's On-Call Engineers
-────────────────────────────
-
-📋 Platform Team Schedule
-👤 Engineer: John Doe (john.doe@company.com)
-⏰ Shift: Jan 23, 09:00 AM - Jan 24, 09:00 AM
-
-────────────────────────────
-Updated: January 23, 2025, 9:00 AM
-```
+- Fetches current on-call information from Datadog On-Call schedules
+- Posts formatted messages to Slack channels
+- Optional automatic message pinning
+- Configurable scheduling (cron-based)
+- Support for multiple on-call schedules
+- Beautiful formatted messages with engineer details and shift times
 
 ## Prerequisites
 
@@ -39,39 +17,18 @@ Updated: January 23, 2025, 9:00 AM
 - A Datadog account with API access
 - A Slack workspace with bot creation permissions
 
-## Quick Start
+## Quick Start (Recommended)
 
-### 1. Install Dependencies
+1. Clone or download this project
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-```bash
-npm install
-```
-
-### 2. Set Up Your Slack App
-
-1. Go to https://api.slack.com/apps
-2. Click "Create New App" → "From scratch"
-3. Name your app (e.g., "On-Call Bot") and select your workspace
-4. Go to "OAuth & Permissions"
-5. Add these Bot Token Scopes:
-   - `chat:write` - Post messages to channels
-   - `chat:write.public` - Post to public channels without joining
-   - `pins:write` - Pin messages (optional)
-6. Click "Install to Workspace"
-7. Copy the "Bot User OAuth Token" (starts with `xoxb-`)
-
-### 3. Get Your Datadog API Keys
-
-1. Go to Datadog → Organization Settings → API Keys
-2. Create or copy your API Key
-3. Go to Application Keys
-4. Create or copy your Application Key
-
-### 4. Run the Setup Wizard
-
-```bash
-npm run setup
-```
+3. Run the setup wizard:
+   ```bash
+   npm run setup
+   ```
 
 The setup wizard will guide you through:
 - Validating your Datadog credentials
@@ -82,37 +39,55 @@ The setup wizard will guide you through:
 
 **That's it!** The wizard does everything for you.
 
-### 5. Test and Run
+## Manual Configuration (Alternative)
 
-Test the bot (posts immediately):
-```bash
-npm test
-```
+If you prefer to configure manually instead of using the setup wizard:
 
-Start the bot with scheduled posts:
-```bash
-npm start
-```
+### 1. Datadog Setup
 
-## Manual Configuration
+Get your credentials from: https://app.datadoghq.eu/organization-settings/api-keys
 
-If you prefer to configure manually:
+You'll need:
+- **API Key**
+- **Application Key**
+- **Site** (e.g., datadoghq.eu, datadoghq.com)
 
-1. Copy `.env.example` to `.env`
-2. Fill in your credentials
-3. Run the bot
+To find your Schedule ID:
+1. Go to your Datadog On-Call dashboard: https://app.datadoghq.eu/on-call/schedules
+2. Click on the schedule you want to monitor
+3. The Schedule ID is in the URL
 
-### Environment Variables
+### 2. Slack Bot Setup
+
+Create or configure your Slack app at: https://api.slack.com/apps
+
+**Required OAuth Scopes** (Bot Token Scopes):
+- `chat:write` - Post messages to channels
+- `chat:write.public` - Post messages to public channels without joining
+- `pins:write` - Pin messages (optional)
+
+**Get your Bot Token**:
+1. Go to "OAuth & Permissions" in your Slack app settings
+2. Click "Install to Workspace"
+3. Copy the "Bot User OAuth Token" (starts with `xoxb-`)
+
+**Get your Channel ID**:
+1. Right-click on the channel in Slack → "View channel details"
+2. Copy the Channel ID at the bottom
+
+### 3. Environment Variables
+
+Edit the `.env` file manually:
 
 ```env
 # Datadog Configuration
-DATADOG_API_KEY=your_datadog_api_key
-DATADOG_APP_KEY=your_datadog_application_key
-DATADOG_SITE=datadoghq.com
-DATADOG_SCHEDULE_ID=your_schedule_id
+DATADOG_API_KEY=your_api_key
+DATADOG_APP_KEY=your_app_key
+DATADOG_SITE=datadoghq.eu
+DATADOG_SCHEDULE_ID=optional_schedule_id
 
 # Slack Configuration
-SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_BOT_TOKEN=xoxb-your-token
 SLACK_CHANNEL_ID=C1234567890
 
 # Schedule Configuration (cron format)
@@ -122,17 +97,7 @@ CRON_SCHEDULE=0 9 * * *
 PIN_MESSAGE=true
 ```
 
-### Datadog Sites
-
-Choose your Datadog site:
-- `datadoghq.com` - US1 (Default)
-- `us3.datadoghq.com` - US3
-- `us5.datadoghq.com` - US5
-- `datadoghq.eu` - EU1
-- `ap1.datadoghq.com` - Asia Pacific
-
-### Cron Schedule Examples
-
+#### Cron Schedule Examples:
 - `0 9 * * *` - Every day at 9:00 AM
 - `0 9 * * 1-5` - Every weekday at 9:00 AM
 - `0 9,17 * * *` - Every day at 9:00 AM and 5:00 PM
@@ -141,27 +106,71 @@ Choose your Datadog site:
 
 ## Usage
 
-### Commands
-
+### Test the bot (post immediately):
 ```bash
-# Run setup wizard
-npm run setup
-
-# Post immediately (for testing)
 npm test
-# or
+```
+or
+```bash
 node index.js now
+```
 
-# Start with scheduled posts
+### Start the bot with scheduled posts:
+```bash
 npm start
-# or
+```
+or
+```bash
 node index.js start
 ```
 
+The bot will:
+1. Validate your configuration
+2. Start running and wait for the scheduled time
+3. Post on-call information automatically at the configured intervals
+4. Optionally pin the messages to the channel
+
+## Message Format
+
+The bot posts beautifully formatted messages like:
+
+```
+🚨 Today's On-Call Engineers
+────────────────────────────
+
+📋 Platform Team Schedule
+👤 Engineer: John Doe (john.doe@company.com)
+⏰ Shift: Jan 23, 09:00 AM - Jan 24, 09:00 AM
+
+────────────────────────────
+
+Updated: January 23, 2025, 9:00 AM
+```
+
+## Troubleshooting
+
+### "Missing required configuration"
+- Make sure all required fields in `.env` are filled out
+- Ensure your `.env` file is in the same directory as `index.js`
+
+### "Error fetching on-call data from Datadog"
+- Verify your Datadog API keys are correct
+- Check that your Schedule ID is valid
+- Ensure your Datadog account has access to On-Call schedules
+
+### "Error posting to Slack"
+- Verify your Slack bot token is correct
+- Ensure the bot has the required OAuth scopes
+- Check that the channel ID is correct
+- Make sure the bot is installed in your workspace
+
+### "Error pinning message"
+- Ensure the bot has the `pins:write` scope
+- The bot must be a member of private channels to pin messages
+
 ## Running in Production
 
-### Using PM2 (Recommended)
-
+### Using PM2 (Recommended):
 ```bash
 npm install -g pm2
 pm2 start index.js --name oncall-bot
@@ -169,10 +178,8 @@ pm2 save
 pm2 startup
 ```
 
-### Using Docker
-
+### Using Docker:
 Create a `Dockerfile`:
-
 ```dockerfile
 FROM node:18-alpine
 WORKDIR /app
@@ -183,113 +190,21 @@ CMD ["node", "index.js", "start"]
 ```
 
 Build and run:
-
 ```bash
 docker build -t oncall-bot .
 docker run -d --env-file .env oncall-bot
 ```
 
-### Using Docker Compose
+## Advanced Configuration
 
-Create `docker-compose.yml`:
+### Monitor Multiple Schedules
+If you want to monitor multiple schedules, you can:
+1. Remove or leave blank the `DATADOG_SCHEDULE_ID` to fetch all on-call schedules
+2. Or create multiple bot instances with different configurations
 
-```yaml
-version: '3.8'
-services:
-  oncall-bot:
-    build: .
-    env_file: .env
-    restart: unless-stopped
-```
-
-Run:
-
-```bash
-docker-compose up -d
-```
-
-## Features in Detail
-
-### Interactive Setup Wizard
-
-The setup wizard (`npm run setup`) provides:
-- ✅ Real-time credential validation
-- ✅ Automatic Datadog schedule discovery
-- ✅ Slack channel selection from a list
-- ✅ Test message posting
-- ✅ Automatic configuration file generation
-
-### Message Formatting
-
-Messages include:
-- Schedule name
-- Engineer name and email
-- Shift start and end times
-- Last update timestamp
-- Professional formatting with emojis
-
-### Multiple Schedules
-
-- Leave `DATADOG_SCHEDULE_ID` empty to monitor all schedules
-- Or specify a single schedule ID to monitor just one team
-
-## Troubleshooting
-
-### "Missing required configuration"
-- Ensure all required fields in `.env` are filled
-- Run `npm run setup` to reconfigure
-
-### "Error fetching on-call data from Datadog"
-- Verify your Datadog API keys are correct
-- Check that your Schedule ID is valid
-- Ensure your account has access to On-Call schedules
-
-### "Error posting to Slack"
-- Verify your Slack bot token is correct
-- Ensure the bot has required OAuth scopes
-- Check that the channel ID is correct
-- For private channels, invite the bot: `/invite @YourBotName`
-
-### "Error pinning message"
-- Ensure the bot has `pins:write` scope
-- The bot must be a member of private channels to pin messages
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+### Custom Message Format
+Edit the `formatOnCallMessage()` function in `index.js` to customize the message appearance.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- Built with [@slack/web-api](https://www.npmjs.com/package/@slack/web-api)
-- Datadog API integration
-- Cron scheduling with [node-cron](https://www.npmjs.com/package/node-cron)
-
-## Support
-
-If you encounter any issues or have questions:
-- Open an issue on GitHub
-- Check the troubleshooting section above
-- Review your configuration in `.env`
-
-## Roadmap
-
-- [ ] Support for PagerDuty integration
-- [ ] Web dashboard for configuration
-- [ ] Slash commands for manual posting
-- [ ] Multiple channel support
-- [ ] Custom message templates
-- [ ] Notification on schedule changes
-
----
-
-Made with ❤️ for DevOps teams
+ISC
